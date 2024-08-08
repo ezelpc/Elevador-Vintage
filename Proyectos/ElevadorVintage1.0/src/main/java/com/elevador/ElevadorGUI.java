@@ -7,9 +7,9 @@ import java.awt.event.ActionListener;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Queue;
 
 public class ElevadorGUI extends JFrame {
@@ -18,46 +18,58 @@ public class ElevadorGUI extends JFrame {
     private JButton[] botonesPisos;
     private JButton subirButton;
     private JButton bajarButton;
-    private IndicadorAnalogico indicadorPiso;
+    private AnalogIndicator indicadorPiso;
     private Queue<Peticion> peticiones;
     private boolean enMovimiento = false;
     private boolean subir = true; // Controla la dirección del movimiento
 
     public ElevadorGUI() {
         setTitle("Elevador Vintage");
-        setSize(500, 400); // Tamaño ajustado para mejor visibilidad
+        setSize(500, 500); // Aumentar el tamaño para acomodar el indicador completo
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
         nombreField = new JTextField(20);
         subirButton = new JButton("Subir");
         bajarButton = new JButton("Bajar");
-        indicadorPiso = new IndicadorAnalogico(); // Usar el indicador analógico
+        indicadorPiso = new AnalogIndicator(); // Crear el indicador analógico
         peticiones = new LinkedList<>();
 
-        JPanel panel = new JPanel();
-        panel.setLayout(new GridLayout(6, 3)); // Ajuste del diseño para incluir el indicador analógico
-        panel.setBackground(new Color(255, 240, 220)); // Color vintage para el fondo
+        JPanel panelPrincipal = new JPanel();
+        panelPrincipal.setLayout(new BorderLayout());
+        panelPrincipal.setBackground(new Color(255, 250, 240)); // Color vintage para el fondo
 
-        panel.add(new JLabel("Ingresa Tu Nombre Porfavor:", SwingConstants.CENTER));
-        panel.add(nombreField);
-        panel.add(new JLabel(""));
+        // Panel para el indicador rectangular
+        JPanel panelIndicador = new JPanel();
+        panelIndicador.setLayout(new BorderLayout());
+        panelIndicador.add(indicadorPiso, BorderLayout.CENTER);
+        panelPrincipal.add(panelIndicador, BorderLayout.NORTH);
+
+        // Panel para los controles
+        JPanel panelControles = new JPanel();
+        panelControles.setLayout(new GridLayout(6, 3)); // Ajustado para acomodar los botones y los campos
+        panelControles.setBackground(new Color(255, 250, 240)); // Color vintage para el fondo
+
+        panelControles.add(new JLabel("Ingresa Tu Nombre (Opcional):"));
+        panelControles.add(nombreField);
+        panelControles.add(new JLabel(""));
 
         botonesPisos = new JButton[8];
         for (int i = 0; i < botonesPisos.length; i++) {
             botonesPisos[i] = new JButton(String.valueOf(i));
-            botonesPisos[i].setFont(new Font("Courier New", Font.BOLD, 18)); // Fuente vintage
-            botonesPisos[i].setBackground(new Color(210, 180, 140)); // Estilo vintage
+            botonesPisos[i].setFont(new Font("Arial", Font.BOLD, 16));
+            botonesPisos[i].setBackground(new Color(220, 220, 220)); // Estilo vintage
             botonesPisos[i].setOpaque(true);
             botonesPisos[i].addActionListener(new PisoButtonListener(i));
-            panel.add(botonesPisos[i]);
+            panelControles.add(botonesPisos[i]);
         }
 
-        panel.add(subirButton);
-        panel.add(bajarButton);
-        panel.add(indicadorPiso); // Agregar el indicador analógico
+        panelControles.add(subirButton);
+        panelControles.add(bajarButton);
 
-        add(panel);
+        panelPrincipal.add(panelControles, BorderLayout.CENTER);
+
+        add(panelPrincipal);
 
         subirButton.addActionListener(new ActionListener() {
             @Override
@@ -85,11 +97,33 @@ public class ElevadorGUI extends JFrame {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            registrarAbordaje(pisoDestino);
-            if (!enMovimiento) {
-                procesarPeticiones();
+            String nombreUsuario = nombreField.getText().trim();
+            if (!nombreUsuario.isEmpty()) {
+                // Registrar la petición con nombre
+                registrarAbordaje(pisoDestino, nombreUsuario);
+            } else {
+                // Mover el indicador sin registrar en la BD ni mostrar alerta
+                moverIndicador(pisoDestino);
             }
         }
+    }
+
+    private void moverIndicador(int pisoDestino) {
+        new Thread(() -> {
+            while (pisoActual != pisoDestino) {
+                if (pisoActual < pisoDestino) {
+                    pisoActual++;
+                } else {
+                    pisoActual--;
+                }
+                indicadorPiso.setPisoActual(pisoActual); // Actualiza el indicador
+                try {
+                    Thread.sleep(3500); // Espera de 3.5 segundos entre pisos
+                } catch (InterruptedException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }).start();
     }
 
     private void procesarPeticiones() {
@@ -119,9 +153,9 @@ public class ElevadorGUI extends JFrame {
                     } else {
                         pisoActual--;
                     }
-                    actualizarIndicador();
+                    indicadorPiso.setPisoActual(pisoActual); // Actualiza el indicador
                     try {
-                        Thread.sleep(2500); // Espera de 3.5 segundos entre pisos
+                        Thread.sleep(1800); // Espera de 3.5 segundos entre pisos
                     } catch (InterruptedException ex) {
                         ex.printStackTrace();
                     }
@@ -136,35 +170,30 @@ public class ElevadorGUI extends JFrame {
         }).start();
     }
 
-    private void actualizarIndicador() {
-        SwingUtilities.invokeLater(() -> {
-            indicadorPiso.setPisoActual(pisoActual); // Actualizar el indicador de piso
-        });
-    }
-
-    private void registrarAbordaje(int pisoDestino) {
-        String nombre = nombreField.getText();
-        if (!nombre.isEmpty()) {
-            peticiones.add(new Peticion(nombre, pisoActual, pisoDestino));
-            registrarAbordajeEnBD(new Peticion(nombre, pisoActual, pisoDestino)); // Registrar en BD
-            // Resetea los campos después de registrar
-            nombreField.setText("");
-            for (JButton boton : botonesPisos) {
-                boton.setEnabled(true);
-            }
-        }
-    }
-
     private void mostrarMensaje(int usuariosBajaron) {
         SwingUtilities.invokeLater(() -> {
             JOptionPane.showMessageDialog(this, "Piso destino alcanzado: " + pisoActual +
                     "\nUsuarios que bajaron: " + usuariosBajaron, "Alerta", JOptionPane.INFORMATION_MESSAGE);
             try {
-                Thread.sleep(2000); // Muestra el mensaje durante 5 segundos
+                Thread.sleep(5000); // Muestra el mensaje durante 5 segundos
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         });
+    }
+
+    private void registrarAbordaje(int pisoDestino, String nombre) {
+        Peticion peticion = new Peticion(nombre, pisoActual, pisoDestino);
+        peticiones.add(peticion);
+        registrarAbordajeEnBD(peticion); // Registrar en BD
+        // Resetea el campo de nombre después de registrar
+        nombreField.setText("");
+        for (JButton boton : botonesPisos) {
+            boton.setEnabled(true);
+        }
+        if (!enMovimiento) {
+            procesarPeticiones();
+        }
     }
 
     private void registrarAbordajeEnBD(Peticion peticion) {
@@ -199,33 +228,54 @@ public class ElevadorGUI extends JFrame {
             return pisoDestino;
         }
     }
-}
 
-// Clase IndicadorAnalogico
-class IndicadorAnalogico extends JPanel {
-    private int pisoActual = 0;
+    // Clase interna para el indicador rectangular
+    private static class AnalogIndicator extends JPanel {
+        private int pisoActual = 0;
+        private final int maxPisos = 7; // Número máximo de pisos
 
-    public IndicadorAnalogico() {
-        setPreferredSize(new Dimension(100, 200)); // Tamaño del indicador
-    }
+        public AnalogIndicator() {
+            setPreferredSize(new Dimension(400, 100)); // Tamaño del indicador
+        }
 
-    public void setPisoActual(int pisoActual) {
-        this.pisoActual = pisoActual;
-        repaint();
-    }
+        public void setPisoActual(int pisoActual) {
+            this.pisoActual = pisoActual;
+            repaint(); // Redibuja el panel cuando se actualice el piso
+        }
 
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        Graphics2D g2d = (Graphics2D) g;
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2d = (Graphics2D) g;
+            int width = getWidth();
+            int height = getHeight();
+            int sectionWidth = width / (maxPisos + 1);
+            int rectHeight = height - 20;
+            int yOffset = 10;
 
-        // Dibuja el indicador analógico
-        g2d.setColor(Color.BLACK);
-        g2d.drawRect(20, 20, 60, 160);
-        g2d.drawLine(50, 20, 50, 180);
+            // Dibuja el rectángulo fraccionado
+            g2d.setColor(Color.BLACK);
+            g2d.fillRect(0, yOffset, width, rectHeight);
 
-        g2d.setColor(Color.RED);
-        g2d.fillRect(40, 180 - pisoActual * 20, 20, 20); // Dibuja el indicador de piso actual
+            // Dibuja las secciones y los números
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(new Font("Arial", Font.BOLD, 18));
+            for (int i = 0; i <= maxPisos; i++) {
+                int x = (i * sectionWidth);
+                g2d.drawRect(x, yOffset, sectionWidth, rectHeight);
+                int numX = x + (sectionWidth / 2) - 5;
+                int numY = yOffset + (rectHeight / 2) + 5;
+                g2d.drawString(String.valueOf(i), numX, numY);
+            }
+
+            // Dibuja la flecha del indicador
+            g2d.setColor(Color.RED);
+            int arrowSize = 10;
+            int arrowX = (pisoActual * sectionWidth) + (sectionWidth / 2);
+            int arrowY = yOffset + rectHeight + arrowSize;
+            int[] xPoints = {arrowX - arrowSize, arrowX, arrowX + arrowSize};
+            int[] yPoints = {arrowY - arrowSize, arrowY, arrowY - arrowSize};
+            g2d.fillPolygon(xPoints, yPoints, 3);
+        }
     }
 }
